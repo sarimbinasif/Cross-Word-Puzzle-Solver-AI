@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Crossword Solver</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .crossword-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-gap: 1px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .crossword-cell {
+            aspect-ratio: 1/1;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            position: relative;
+        }
+        .crossword-cell.black {
+            background-color: #000;
+        }
+        .cell-number {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            font-size: 10px;
+            font-weight: normal;
+        }
+        .prediction-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .prediction-item:hover {
+            background-color: #e9ecef;
+        }
+        .stats-card {
+            margin-bottom: 20px;
+        }
+        .feedback-badge {
+            cursor: pointer;
+        }
+        #historyList {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .loading-spinner {
+            display: none;
+        }
+        .pattern-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .pattern-cell {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #ccc;
+            margin-right: 2px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ML Crossword Solver</h1>
+            <p class="lead">Solve crossword clues using machine learning</p>
+        </div>
+
+        <div class="row">
+            <!-- Left Column for Input -->
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Enter Clue</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="solverForm">
+                            <div class="mb-3">
+                                <label for="clueInput" class="form-label">Crossword Clue</label>
+                                <input type="text" class="form-control" id="clueInput" placeholder="Enter crossword clue">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="lengthInput" class="form-label">Answer Length (optional)</label>
+                                <input type="number" class="form-control" id="lengthInput" min="1" max="20">
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Known Letters (optional)</label>
+                                <div id="patternContainer" class="pattern-container">
+                                    <!-- Pattern cells will be added here by JavaScript -->
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="decreaseLength">-</button>
+                                    <span id="patternLength">5</span> letters
+                                    <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="increaseLength">+</button>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary w-100">
+                                <span class="spinner-border spinner-border-sm loading-spinner" role="status" aria-hidden="true"></span>
+                                Solve Clue
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card mt-4 shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Predictions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="predictionsContainer">
+                            <p class="text-muted text-center">Enter a clue to see predictions</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-4 shadow-sm stats-card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">Model Statistics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="statsContainer">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="border rounded p-2 text-center mb-2">
+                                        <h6>Dataset Size</h6>
+                                        <span id="datasetSize" class="h4">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-2 text-center mb-2">
+                                        <h6>Dictionary Size</h6>
+                                        <span id="dictionarySize" class="h4">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-2 text-center">
+                                        <h6>Accuracy</h6>
+                                        <span id="modelAccuracy" class="h4">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-2 text-center">
+                                        <h6>Top-3 Accuracy</h6>
+                                        <span id="topThreeAccuracy" class="h4">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-outline-info w-100 mt-3" id="refreshStats">Refresh Stats</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column for Results and History -->
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">Clue History</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <ul class="list-group list-group-flush" id="historyList">
+                            <!-- History items will be added here by JavaScript -->
+                            <li class="list-group-item text-center text-muted">No history yet</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card mt-4 shadow-sm">
+                    <div class="card-header bg-warning">
+                        <h5 class="mb-0">Feedback</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="feedbackContainer">
+                            <p class="text-muted">Select a prediction to provide feedback</p>
+                            <div id="feedbackForm" style="display: none;">
+                                <div class="mb-3">
+                                    <label class="form-label">Selected Answer</label>
+                                    <input type="text" class="form-control" id="selectedAnswer" disabled>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Correct Answer (if different)</label>
+                                    <input type="text" class="form-control" id="correctAnswer">
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="isCorrectCheck">
+                                        <label class="form-check-label" for="isCorrectCheck">
+                                            This answer is correct
+                                        </label>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-warning w-100" id="submitFeedback">Submit Feedback</button>
+                            </div>
+                            <div id="feedbackSuccess" class="alert alert-success mt-3" style="display: none;">
+                                Thank you for your feedback! It helps improve the model.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-4 shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0">Improve Dictionary</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Expand the crossword dictionary with more words:</p>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-secondary" id="expandDefault">
+                                <span class="spinner-border spinner-border-sm loading-spinner" role="status" aria-hidden="true"></span>
+                                Add Common Crossword Words
+                            </button>
+                            <button class="btn btn-outline-secondary" id="expandWordnet">
+                                <span class="spinner-border spinner-border-sm loading-spinner" role="status" aria-hidden="true"></span>
+                                Add Words from WordNet
+                            </button>
+                        </div>
+                        <div id="dictionarySuccess" class="alert alert-success mt-3" style="display: none;">
+                            Dictionary expanded successfully!
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="mt-5 text-center text-muted">
+            <p>ML Crossword Solver &copy; 2025</p>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Pattern input initialization
+            const patternContainer = document.getElementById('patternContainer');
+            const patternLength = document.getElementById('patternLength');
+            let currentLength = 5;
+
+            function updatePatternCells() {
+                // Clear existing cells
+                patternContainer.innerHTML = '';
+                
+                // Create new cells
+                for (let i = 0; i < currentLength; i++) {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.maxLength = 1;
+                    input.className = 'pattern-cell';
+                    input.dataset.position = i;
+                    patternContainer.appendChild(input);
+                }
+                
+                patternLength.textContent = currentLength;
+            }
+
+            // Initialize pattern cells
+            updatePatternCells();
+
+            // Pattern length controls
+            document.getElementById('decreaseLength').addEventListener('click', function() {
+                if (currentLength > 2) {
+                    currentLength--;
+                    updatePatternCells();
+                }
+            });
+
+            document.getElementById('increaseLength').addEventListener('click', function() {
+                if (currentLength < 20) {
+                    currentLength++;
+                    updatePatternCells();
+                }
+            });
+
+            // Form submission
+            document.getElementById('solverForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const clue = document.getElementById('clueInput').value.trim();
+                if (!clue) {
+                    alert('Please enter a crossword clue');
+                    return;
+                }
+                
+                // Get length input
+                const length = document.getElementById('lengthInput').value || null;
+                
+                // Get pattern from cells
+                const patternCells = document.querySelectorAll('.pattern-cell');
+                let pattern = '';
+                let knownLetters = {};
+                
+                patternCells.forEach(cell => {
+                    const val = cell.value.trim().toUpperCase();
+                    pattern += val || '?';
+                    if (val) {
+                        knownLetters[parseInt(cell.dataset.position)] = val;
+                    }
+                });
+                
+                // Show loading spinner
+                document.querySelector('#solverForm .loading-spinner').style.display = 'inline-block';
+                
+                // Send request to API
+                fetch('/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        clue: clue,
+                        length: length,
+                        pattern: pattern
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide loading spinner
+                    document.querySelector('#solverForm .loading-spinner').style.display = 'none';
+                    
+                    // Display predictions
+                    displayPredictions(data);
+                    
+                    // Add to history
+                    addToHistory(clue, data.predictions);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.querySelector('#solverForm .loading-spinner').style.display = 'none';
+                    alert('Error getting predictions. Please try again.');
+                });
+            });
+
+            // Display predictions
+            function displayPredictions(data) {
+                const container = document.getElementById('predictionsContainer');
+                
+                if (!data.predictions || data.predictions.length === 0) {
+                    container.innerHTML = '<p class="text-center text-muted">No predictions found</p>';
+                    return;
+                }
+                
+                let html = '<div class="list-group">';
+                
+                data.predictions.forEach((pred, index) => {
+                    const confidence = Math.round(pred.confidence * 100);
+                    const badgeColor = confidence > 80 ? 'bg-success' : 
+                                       confidence > 50 ? 'bg-warning' : 'bg-danger';
+                    
+                    html += `
+                        <a href="#" class="list-group-item list-group-item-action prediction-item" 
+                           data-answer="${pred.answer}" data-clue="${data.clue}">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">${pred.answer}</h5>
+                                <span class="badge ${badgeColor}">${confidence}%</span>
+                            </div>
+                            <small class="text-muted">Rank: ${index + 1}</small>
+                        </a>
+                    `;
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+                
+                // Add click event for feedback
+                document.querySelectorAll('.prediction-item').forEach(item => {
+                    item.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        showFeedbackForm(this.dataset.answer, this.dataset.clue);
+                    });
+                });
+            }
+
+            // Show feedback form
+            function showFeedbackForm(answer, clue) {
+                document.getElementById('selectedAnswer').value = answer;
+                document.getElementById('correctAnswer').value = '';
+                document.getElementById('isCorrectCheck').checked = false;
+                document.getElementById('feedbackForm').style.display = 'block';
+                document.getElementById('feedbackSuccess').style.display = 'none';
+                
+                // Store clue for feedback submission
+                document.getElementById('feedbackForm').dataset.clue = clue;
+            }
+
+            // Submit feedback
+            document.getElementById('submitFeedback').addEventListener('click', function() {
+                const predictedAnswer = document.getElementById('selectedAnswer').value;
+                const correctAnswer = document.getElementById('correctAnswer').value.trim();
+                const isCorrect = document.getElementById('isCorrectCheck').checked;
+                const clue = document.getElementById('feedbackForm').dataset.clue;
+                
+                // Validate
+                if (!isCorrect && !correctAnswer) {
+                    alert('Please either mark as correct or provide the correct answer');
+                    return;
+                }
+                
+                // Prepare feedback data
+                const feedbackData = {
+                    clue: clue,
+                    predicted_answer: predictedAnswer,
+                    correct_answer: isCorrect ? predictedAnswer : correctAnswer,
+                    is_correct: isCorrect
+                };
+                
+                // Send feedback
+                fetch('/feedback', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(feedbackData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('feedbackForm').style.display = 'none';
+                    document.getElementById('feedbackSuccess').style.display = 'block';
+                    
+                    // Refresh stats after feedback
+                    setTimeout(fetchStats, 1000);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error submitting feedback. Please try again.');
+                });
+            });
+
+            // Add to history
+            function addToHistory(clue, predictions) {
+                const historyList = document.getElementById('historyList');
+                
+                // Remove placeholder if exists
+                const placeholder = historyList.querySelector('.text-muted');
+                if (placeholder && placeholder.parentNode === historyList) {
+                    historyList.removeChild(placeholder);
+                }
+                
+                // Create new history item
+                const item = document.createElement('li');
+                item.className = 'list-group-item';
+                
+                const topAnswer = predictions && predictions.length > 0 ? 
+                    predictions[0].answer : 'No prediction';
+                
+                item.innerHTML = `
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">${clue}</h6>
+                        <small class="text-muted">just now</small>
+                    </div>
+                    <p class="mb-1">Top answer: <strong>${topAnswer}</strong></p>
+                `;
+                
+                // Add to the top of the list
+                historyList.insertBefore(item, historyList.firstChild);
+                
+                // Limit history items
+                if (historyList.children.length > 20) {
+                    historyList.removeChild(historyList.lastChild);
+                }
+            }
+
+            // Fetch statistics
+            function fetchStats() {
+                fetch('/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('datasetSize').textContent = data.dataset_size.toLocaleString();
+                    document.getElementById('dictionarySize').textContent = data.dictionary_size.toLocaleString();
+                    document.getElementById('modelAccuracy').textContent = 
+                        (data.model_metrics.accuracy * 100).toFixed(1) + '%';
+                    document.getElementById('topThreeAccuracy').textContent = 
+                        (data.model_metrics.top_k_accuracy['3'] * 100).toFixed(1) + '%';
+                })
+                .catch(error => {
+                    console.error('Error fetching stats:', error);
+                });
+            }
+
+            // Refresh stats button
+            document.getElementById('refreshStats').addEventListener('click', fetchStats);
+
+            // Dictionary expansion
+            document.getElementById('expandDefault').addEventListener('click', function() {
+                const spinner = this.querySelector('.loading-spinner');
+                spinner.style.display = 'inline-block';
+                this.disabled = true;
+                
+                fetch('/expand_dictionary', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ source: 'default' })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    spinner.style.display = 'none';
+                    this.disabled = false;
+                    
+                    document.getElementById('dictionarySuccess').textContent = 
+                        `Added ${data.words_added} new words to the dictionary!`;
+                    document.getElementById('dictionarySuccess').style.display = 'block';
+                    
+                    // Refresh stats
+                    setTimeout(fetchStats, 1000);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    spinner.style.display = 'none';
+                    this.disabled = false;
+                    alert('Error expanding dictionary. Please try again.');
+                });
+            });
+
+            document.getElementById('expandWordnet').addEventListener('click', function() {
+                const spinner = this.querySelector('.loading-spinner');
+                spinner.style.display = 'inline-block';
+                this.disabled = true;
+                
+                fetch('/expand_dictionary', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ source: 'wordnet' })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    spinner.style.display = 'none';
+                    this.disabled = false;
+                    
+                    document.getElementById('dictionarySuccess').textContent = 
+                        `Added ${data.words_added} new words to the dictionary!`;
+                    document.getElementById('dictionarySuccess').style.display = 'block';
+                    
+                    // Refresh stats
+                    setTimeout(fetchStats, 1000);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    spinner.style.display = 'none';
+                    this.disabled = false;
+                    alert('Error expanding dictionary. Please try again.');
+                });
+            });
+
+            // Initial stats fetch
+            fetchStats();
+        });
+    </script>
+</body>
+</html>
